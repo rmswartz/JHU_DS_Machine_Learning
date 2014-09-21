@@ -1,0 +1,59 @@
+#Using Machine Learning to Predict Proper Execution of Barbell Exercise
+by: Ryan M. Swartz
+
+#Executive Summary
+In a recent experiment carried out by researchers at Groupware@LES^1^, six subjects wore accelerometers on their the belt, forearm, arm, and a dumbell while performing a weight training exercise either with correct or incorrect form. Researchers split this data into a training set and a test set with the object of building and testing a machine learning model to classify the activity as correct or incorrect based on only the readings of the accelerometers. Based on this data, the trained model demonstrated an out-of-sample accuracy of ##% using a random sub-sampling cross-validation approach to test, and correctly predicted proper execution on ## of 20 test cases provided as a final check on the model.
+
+#Data Processing
+
+The researcher executed a several step process, detailed below, to segment the data and prepare it for the model building process:
+
+_**Step 1**_: Load any R packages required for the analysis.
+
+```{r package load, cache =TRUE, warning = FALSE}
+library(caret)
+library(ggplot2)
+```
+
+_**Step 2**_: Download the source data and create appropriate R objects.
+
+```{r data download, cache = TRUE, warning = FALSE}
+train.URL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+test.URL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+training <- read.csv(train.URL)
+testing <- read.csv(test.URL)
+```
+
+_**Step 3**_: Split the original training data into two sets based on a 75% random sub-sampling scheme to enable cross-validation of the model before the final test on the ```classe``` variable which indicates correct or incorrect execution of the exercise with codes A through E. A indicates a correct execution, while the others classify a variety of improper executions. For full details, please see Reference 1. 
+
+```{r data splitting, cache = TRUE, warning = FALSE}
+set.seed(19428)
+in.train <- createDataPartition(y = training$classe, p = 0.75, list = FALSE)
+training.cv <- training[in.train, ]
+testing.cv <- training[-in.train, ]
+```
+
+_**Step 4**_: In this portion of the analysis, the researcher offers two ways to select covariates for the model: removal of those with near zero covariance (Experiment 1) or using principal component analysis (Experiment 2). Each method is unique and treated as alternatives to achieve the same goal of removing variables with zero covariance to limit the predictors to just those that are likely to be good predictors.
+
+_Experiment 1_: Remove Near Zero Covariates (NZC)
+
+```{r nzc, cache = TRUE}
+nsv <- nearZeroVar(training.cv, saveMetrics = TRUE)
+training.cv.nsv <- training.cv[, colnames(training.cv) %in% rownames(nsv)[nsv$nzv == FALSE]]
+testing.cv.nsv <- testing.cv[, colnames(testing.cv) %in% rownames(nsv)[nsv$nzv == FALSE]]
+```
+
+_Experiment 2_: Pricipal Component Analysis (PCA)
+
+```{r pac, cache = TRUE}
+nsv <- nearZeroVar(training.cv, saveMetrics = TRUE)
+training.cv.nsv <- training.cv[, colnames(training.cv) %in% rownames(nsv)[nsv$nzv == FALSE]]
+testing.cv.nsv <- testing.cv[, colnames(testing.cv) %in% rownames(nsv)[nsv$nzv == FALSE]]
+```
+
+#Model Construction
+
+```{r }
+
+#References
+1. Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. [Qualitative Activity Recognition of Weight Lifting Exercises](http://groupware.les.inf.puc-rio.br/work.jsf?p1=11201). Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
