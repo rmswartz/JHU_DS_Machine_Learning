@@ -2,15 +2,16 @@
 by: Ryan M. Swartz
 
 #Executive Summary
-In a recent experiment carried out by researchers at Groupware@LES^1^, six subjects wore accelerometers on their the belt, forearm, arm, and a dumbell while performing a weight training exercise either with correct or incorrect form. Researchers split this data into a training set and a test set with the object of building and testing a machine learning model to classify the activity as correct or incorrect based on only the readings of the accelerometers. Based on this data, the trained model demonstrated an out-of-sample accuracy of ##% using a random sub-sampling cross-validation approach to test, and correctly predicted proper execution on ## of 20 test cases provided as a final check on the model.
+In a recent experiment carried out by researchers at Groupware@LES^1^, six subjects wore accelerometers on their the belt, forearm, arm, and a dumbell while performing a weight training exercise either with correct or incorrect form. I split this data into a training set and a test set with the object of building and testing a machine learning model to classify the activity as correct or incorrect based on only the readings of the accelerometers. With this data, the trained model demonstrated an out-of-sample accuracy of ##% using a random sub-sampling cross-validation approach to test, and correctly predicted proper execution on ## of 20 test cases provided as a final check on the model.
 
 #Data Processing
 
-The researcher executed a several step process, detailed below, to segment the data and prepare it for the model building process:
+I executed a several step process, detailed below, to segment the data and prepare it for the model building process:
 
 _**Step 1**_: Load any R packages required for the analysis.
 
 ```{r package load, warning = FALSE}
+library(vcd)
 library(caret)
 library(gbm)
 library(randomForest)
@@ -25,7 +26,7 @@ training <- read.table(train.URL, header = TRUE, sep = ",", dec = ",", na.string
 testing <- read.table(test.URL, header = TRUE, sep = ",", dec = ",", na.strings = c("NA", ""))
 ```
 
-_**Step 3**_: After inspection of the training data with the `str()` function, clean the data (both training and test sets) by removing the predictors with 'NA' values among their observations and subsetting the data to the outcome and the measurements from the accelerometers. Also, convert any measurements inadvertently stored as `factor` to `numeric`.
+_**Step 3**_: After inspection of the training data with the `str()` function, I cleaned the data (both training and test sets) by removing the predictors with 'NA' values among their observations and subsetting the data to the outcome and the measurements from the accelerometers. Also, I converted any measurements inadvertently stored as `factor` to `numeric`.
 
 ```{r inspect, echo = FALSE}
 str(training)
@@ -62,7 +63,7 @@ for (i in 2:53) {
 }
 ```
 
-_**Step 4**_: Split the original training data into two sets based on a 75% random sub-sampling scheme to enable cross-validation of the model options and insight to select the best approach before the final test on the `classe` variable. `classe` indicates correct or incorrect execution of the exercise with codes A through E, where A indicates a correct execution, while the others classify a variety of improper executions. For full details, please see Reference 1. 
+_**Step 4**_: I split the original training data into two sets based on a 75% random sub-sampling scheme to enable cross-validation of the model options and insight to select the best approach before the final test on the `classe` variable. `classe` indicates correct or incorrect execution of the exercise with codes A through E, where A indicates a correct execution, while the others classify a variety of improper executions. For full details, please see Reference 1. 
 
 ```{r data splitting, warning = FALSE}
 set.seed(19428)
@@ -71,9 +72,9 @@ training.clean.cv <- training.clean[in.train, ]
 testing.clean.cv <- training.clean[-in.train, ]
 ```
 
-_**Step 5**_: In this portion of the analysis, the researcher selects two sets of predictors for the possible models for evaluation of the better method. by removal of those with near zero covariance to limit the predictors to just those that are likely to be good predictors.
+_**Step 5**_: In this portion of the analysis, I created two options for the sets of predictors used in the models for evaluation of the better method..
 
-_Set 1_: Removing Near Zero Covariates (NZC) identifies those predictors with near zero covariance to limit the predictors to just those that are likely to be good.
+_Option 1_: Removing Near Zero Covariates (NZC) identifies those predictors with near zero covariance to limit the predictors to just those that are likely to be good.
 
 ```{r nzc}
 set.seed(19428)
@@ -84,7 +85,7 @@ testing.clean.cv.nzc <- testing.clean.cv[, colnames(testing.clean.cv) %in% rowna
 
 As it turns out, NZC does not remove any predictors from consideration as compared to the training set; therefore, all predictors in the training data are sufficiently variable in comparison to each other by this measure.
 
-_Set 2_: To select an alternative set of predictors, Principal Components Analysis (PCA) is used to collapse the clean training data's predictors to weighted combinations. This set will be used to train a variety of models and compare the performance of those models against that of models trained with the clean training set, allowing the researcher to determine which method of predictor selection is best for this problem.
+_Option 2_: To consider another way to select predictors, Principal Components Analysis (PCA) is used to collapse the clean training data's predictors to weighted combinations. This set will be used to train a variety of models and compare the performance of those models against that of models trained with the clean training set, allowing me to determine which method of predictor selection is best for this problem.
 
 ```{r pca}
 set.seed(19428)
@@ -97,12 +98,24 @@ testing.clean.cv.pca <- predict(pre.proc.cv, testing.clean.cv[, 3:54])
 testing.clean.cv.pca <- cbind(testing.clean.cv[, 1:2], testing.clean.cv.pca)
 ```
 
-As it turns out, this does not remove any predictors from consideration as compared to the training set; therefore, all predictors in the training data are sufficiently variable in comparison to each other. 
+Lastly, while the above considers the numerical data coming from the accelerometers, I did a simple exploration of the relationship between the subject performing the exercise and the classification to determine if this factor should be a predictor along with the numerical data from the accelerometers.
+<center>
+<fig>
+```{r mosaic, warnings = FALSE, fig.width = 5, fig.height = 5}
+mosaic(~ classe | user_name, data = training.clean.cv, split_vertical = TRUE)
+```
+</fig>
+</center>
+<center>
+**Fig. 1**: Mosaic plot of each subject `user_name` and their exercise classification `classe`
+</center>  
+<br>
+With this mosaic plot, we can see that there is a fair amount of variability in the subjects' abilities to perform the exercise, so I will definitely include this variable as a predictor for both the clean training data and PCA data.
 
 #Model Construction and Error Measurement
 
 _**Model Selection**_
-With two possible sets of variables to consider (all those in the clean training set and those resulting from a PCA), the researcher created four models (Bagging and Random Forest approach for each variable set) and evaluated their performance based on accuracy and kappa. Based upon this, the researcher built a final model using the predictor selection method and modeling approach that yielded the best performance with the entire training set.
+With two possible sets of variables to consider (all those in the clean training set and those resulting from a PCA), I created four models (Bagging and Random Forest approach for each variable set) and evaluated their performance on this problem based on accuracy and kappa. Based upon this, I built a final model using the predictor selection method and modeling approach combination that yielded the best performance with the entire training set.
 
 ```{r models, cache = TRUE}
 set.seed(19428)
