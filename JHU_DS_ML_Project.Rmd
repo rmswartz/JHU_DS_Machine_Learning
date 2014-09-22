@@ -10,50 +10,147 @@ The researcher executed a several step process, detailed below, to segment the d
 
 _**Step 1**_: Load any R packages required for the analysis.
 
-```{r package load, cache =TRUE, warning = FALSE}
+```{r package load, warning = FALSE}
 library(caret)
-library(ggplot2)
+library(gbm)
+library(randomForest)
 ```
 
 _**Step 2**_: Download the source data and create appropriate R objects.
 
 ```{r data download, cache = TRUE, warning = FALSE}
-train.URL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
-test.URL <- "https://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
-training <- read.csv(train.URL)
-testing <- read.csv(test.URL)
+train.URL <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
+test.URL <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
+training <- read.table(train.URL, header = TRUE, sep = ",", dec = ",", na.strings = c("NA", ""))
+testing <- read.table(test.URL, header = TRUE, sep = ",", dec = ",", na.strings = c("NA", ""))
 ```
 
-_**Step 3**_: Split the original training data into two sets based on a 75% random sub-sampling scheme to enable cross-validation of the model before the final test on the ```classe``` variable which indicates correct or incorrect execution of the exercise with codes A through E. A indicates a correct execution, while the others classify a variety of improper executions. For full details, please see Reference 1. 
+_**Step 3**_: After inspection of the training data with the `str()` function, clean the data (both training and test sets) by removing the predictors with 'NA' values among their observations and subsetting the data to the outcome and the measurements from the accelerometers. Also, convert any measurements inadvertently stored as `factor` to `numeric`.
 
-```{r data splitting, cache = TRUE, warning = FALSE}
+```{r inspect, echo = FALSE}
+str(training)
+```
+
+```{r cleaning, warning = FALSE}
+## remove significantly (>25%) NA variables from training set
+## (and use that to drive test set cleaning later)
+training.na.sum <- colSums(is.na(training))
+training.remove <- which(training.na.sum > (0.25 * nrow(training)))
+training.clean <- training[, -training.remove]
+## subset both the training and test sets to variables from accelerometers and
+## necessary identities
+var.names <- names(training.clean[c(60, 2, 8:59)])
+training.clean <- subset(training.clean, select = var.names)
+testing.clean <- subset(testing, select = names(testing) %in% var.names)
+## convert the measurements of class 'factor' and 'integer' to 'numeric' for 
+## training and test sets
+for (i in 3:54) {
+      if (class(training.clean[, i]) == "factor")
+            training.clean[, i] <- as.numeric(as.character(training.clean[, i]))
+      else if (class(training.clean[, i]) == "integer")
+            training.clean[, i] <- as.numeric(training.clean[, i])
+      else
+            training.clean[, i] <- training.clean[, i]
+}
+for (i in 2:53) {
+      if (class(testing.clean[, i]) == "factor")
+            testing.clean[, i] <- as.numeric(as.character(testing.clean[, i]))
+      else if (class(testing.clean[, i]) == "integer")
+            testing.clean[, i] <- as.numeric(testing.clean[, i])
+      else
+            testing.clean[, i] <- testing.clean[, i]
+}
+```
+
+_**Step 4**_: Split the original training data into two sets based on a 75% random sub-sampling scheme to enable cross-validation of the model options and insight to select the best approach before the final test on the `classe` variable. `classe` indicates correct or incorrect execution of the exercise with codes A through E, where A indicates a correct execution, while the others classify a variety of improper executions. For full details, please see Reference 1. 
+
+```{r data splitting, warning = FALSE}
 set.seed(19428)
-in.train <- createDataPartition(y = training$classe, p = 0.75, list = FALSE)
-training.cv <- training[in.train, ]
-testing.cv <- training[-in.train, ]
+in.train <- createDataPartition(y = training.clean$classe, p = 0.75, list = FALSE)
+training.clean.cv <- training.clean[in.train, ]
+testing.clean.cv <- training.clean[-in.train, ]
 ```
 
-_**Step 4**_: In this portion of the analysis, the researcher offers two ways to select covariates for the model: removal of those with near zero covariance (Experiment 1) or using principal component analysis (Experiment 2). Each method is unique and treated as alternatives to achieve the same goal of removing variables with zero covariance to limit the predictors to just those that are likely to be good predictors.
+_**Step 5**_: In this portion of the analysis, the researcher selects two sets of predictors for the possible models for evaluation of the better method. by removal of those with near zero covariance to limit the predictors to just those that are likely to be good predictors.
 
-_Experiment 1_: Remove Near Zero Covariates (NZC)
+_Set 1_: Removing Near Zero Covariates (NZC) identifies those predictors with near zero covariance to limit the predictors to just those that are likely to be good.
 
-```{r nzc, cache = TRUE}
-nsv <- nearZeroVar(training.cv, saveMetrics = TRUE)
-training.cv.nsv <- training.cv[, colnames(training.cv) %in% rownames(nsv)[nsv$nzv == FALSE]]
-testing.cv.nsv <- testing.cv[, colnames(testing.cv) %in% rownames(nsv)[nsv$nzv == FALSE]]
+```{r nzc}
+set.seed(19428)
+nzc.ni <- nearZeroVar(training.clean.cv, saveMetrics = TRUE)
+training.clean.cv.nzc <- training.clean.cv[, colnames(training.clean.cv) %in% rownames(nzc.ni)[nzc.ni$nzv == FALSE]]
+testing.clean.cv.nzc <- testing.clean.cv[, colnames(testing.clean.cv) %in% rownames(nzc.ni)[nzc.ni$nzv == FALSE]]
 ```
 
-_Experiment 2_: Pricipal Component Analysis (PCA)
+As it turns out, NZC does not remove any predictors from consideration as compared to the training set; therefore, all predictors in the training data are sufficiently variable in comparison to each other by this measure.
 
-```{r pac, cache = TRUE}
-nsv <- nearZeroVar(training.cv, saveMetrics = TRUE)
-training.cv.nsv <- training.cv[, colnames(training.cv) %in% rownames(nsv)[nsv$nzv == FALSE]]
-testing.cv.nsv <- testing.cv[, colnames(testing.cv) %in% rownames(nsv)[nsv$nzv == FALSE]]
+_Set 2_: To select an alternative set of predictors, Principal Components Analysis (PCA) is used to collapse the clean training data's predictors to weighted combinations. This set will be used to train a variety of models and compare the performance of those models against that of models trained with the clean training set, allowing the researcher to determine which method of predictor selection is best for this problem.
+
+```{r pca}
+set.seed(19428)
+pre.proc.cv <- preProcess(training.clean.cv[, 3:54], method = "pca", thresh = 0.8)
+## create training data of PCA predictors
+training.clean.cv.pca <- predict(pre.proc.cv, training.clean.cv[, 3:54])
+training.clean.cv.pca <- cbind(training.clean.cv[, 1:2], training.clean.cv.pca)
+## create testing data of PCA predictors
+testing.clean.cv.pca <- predict(pre.proc.cv, testing.clean.cv[, 3:54])
+testing.clean.cv.pca <- cbind(testing.clean.cv[, 1:2], testing.clean.cv.pca)
 ```
 
-#Model Construction
+As it turns out, this does not remove any predictors from consideration as compared to the training set; therefore, all predictors in the training data are sufficiently variable in comparison to each other. 
 
-```{r }
+#Model Construction and Error Measurement
+
+_**Model Selection**_
+With two possible sets of variables to consider (all those in the clean training set and those resulting from a PCA), the researcher created four models (Bagging and Random Forest approach for each variable set) and evaluated their performance based on accuracy and kappa. Based upon this, the researcher built a final model using the predictor selection method and modeling approach that yielded the best performance with the entire training set.
+
+```{r models, cache = TRUE}
+set.seed(19428)
+## remove any objects no longer needed to free up memory
+rm(training)
+rm(testing)
+rm(nzc.ni)
+rm(testing.clean.cv.nzc)
+rm(training.clean.cv.nzc)
+## Model 1: training data with all predictors, boosting approach
+mod.fit.all.b <- train(classe ~ ., method = "gbm", data = training.clean.cv, verbose = FALSE)
+## Model 2: training data with all predictors, random forest model approach
+mod.fit.all.rf <- train(classe ~ ., method = "rf", data = training.clean.cv, prox = TRUE)
+## Model 3: PCA data, boosting approach
+mod.fit.pca.b <- train(classe ~ ., method = "gbm", data = training.clean.cv.pca, verbose = FALSE)
+## Model 4: PCA data, random forest approach
+mod.fit.pca.rf <- train(classe ~ ., method = "rf", data = training.clean.cv.pca, prox = TRUE)
+```
+
+With the completion of four different models, the researcher concluded the cross validation portion of model building. Recall that the researcher created a training set and validation set of data from the original training corpus with a 75% split. With the validation set, the researcher determined estimates for the out-of-sample error for each model option and selected the approach with the lowest error to train the final model on the entirety of the training corpus.
+
+```{r confusion matrices, cache = TRUE}
+## Model 1: predictions and confusion matrices
+pred.fit.1 <- predict(mod.fit.all.b, newdata = testing.clean.cv)
+cm.fit.1 <- confusionMatrix(pred.fit.1, testing.clean.cv$classe)
+## Model 2: predictions and confusion matrices
+pred.fit.2 <- predict(mod.fit.all.rf, newdata = testing.clean.cv)
+cm.fit.2 <- confusionMatrix(pred.fit.2, testing.clean.cv$classe)
+## Model 3: predictions and confusion matrices
+pred.fit.3 <- predict(mod.fit.pca.b, newdata = testing.clean.cv.pca)
+cm.fit.3 <- confusionMatrix(pred.fit.3, testing.clean.cv.pca$classe)
+## Model 4: predictions and confusion matrices
+pred.fit.4 <- predict(mod.fit.pca.rf, newdata = testing.clean.cv.pca)
+cm.fit.4 <- confusionMatrix(pred.fit.4, testing.clean.cv.pca$classe)
+```
+
+Having built the models and performed cross validation, the estimates for out-of-sample error and kappa are as follows for each:
+
+| Model No. | Predictor Selection | Model Type | 95% CI of Error | Kappa |
+|----------|----------|----------|----------|----------|
+| 1 | All | Bagging | (`{r round(cm.fit.1$overall['AccuracyLower'], 3}`, `{r round(cm.fit.1$overall['AccuracyUpper'], 3}`) | `{r round(cm.fit.1$overall['Kappa'], 3}` |
+| 2 | All | Random Forest | (`{r round(cm.fit.2$overall['AccuracyLower'], 3}`, `{r round(cm.fit.2$overall['AccuracyUpper'], 3}`) | `{r round(cm.fit.2$overall['Kappa'], 3}` |
+| 3 | PCA | Bagging | (`{r round(cm.fit.3$overall['AccuracyLower'], 3}`, `{r round(cm.fit.3$overall['AccuracyUpper'], 3}`) | `{r round(cm.fit.3$overall['Kappa'], 3}` |
+| 4 | PCA | Random Forest | (`{r round(cm.fit.4$overall['AccuracyLower'], 3}`, `{r round(cm.fit.4$overall['AccuracyUpper'], 3}`) | `{r round(cm.fit.4$overall['Kappa'], 3}` |
+
+With this cross validation, the most accurate approach is to use all variables in the clean training set to train a random forest model.
+
+
 
 #References
 1. Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. [Qualitative Activity Recognition of Weight Lifting Exercises](http://groupware.les.inf.puc-rio.br/work.jsf?p1=11201). Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
