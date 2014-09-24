@@ -106,7 +106,7 @@ testing.clean.cv.pca <- cbind(testing.clean.cv[, 1:2], testing.clean.cv.pca)
 Lastly, while the above considers the numerical data coming from the accelerometers, I did a simple exploration of the relationship between the subject performing the exercise and the classification to determine if this factor should be a predictor along with the numerical data from the accelerometers.
 <center>
 <fig>
-```{r mosaic, warnings = FALSE, fig.width = 5, fig.height = 5}
+```{r mosaic, warning = FALSE, fig.width = 5, fig.height = 5}
 mosaic(~ classe | user_name, data = training.clean.cv, split_vertical = TRUE)
 ```
 </fig>
@@ -121,6 +121,13 @@ With this mosaic plot, we can see that there is a fair amount of variability in 
 
 _**Model Selection**_
 With two possible sets of variables to consider (all those in the clean training set and those resulting from a PCA), I created four models (Bagging and Random Forest approach for each variable set) and evaluated their performance on this problem based on accuracy and kappa. Based upon this, I built a final model using the predictor selection method and modeling approach combination that yielded the best performance with the entire training set.
+
+```{r remove objects, cache = TRUE, warning = FALSE}
+## remove objects no longer needed to free memory space
+rm(nzc.ni)
+rm(training.clean.cv.nzc)
+rm(testning.clean.cv.nzc)
+```
 
 ```{r model 1, cache = TRUE, warning = FALSE}
 set.seed(19428)
@@ -187,7 +194,7 @@ Having built the models and performed cross validation, the estimates for out-of
 With this cross validation, the most accurate approach is to use all variables in the clean training set to train a random forest model. We note the in-sample accuracy of this model approach to be `{r round(cm.fit.2.is$overall['Accuracy'], 3) * 100}`%, which is of course an over-estimate of the out-of-sample accuracy of `{r round(cm.fit.2$overall['Accuracy'], 3) * 100}`%. As a final test, I run the model against the provided testing set to evaluate the model on 20 test cases and write those results to text files in the working directory.
 
 
-```{r final test, cache = TRUE, warnings = FALSE}
+```{r final test, cache = TRUE, warning = FALSE}
 final.test.results <- predict(mod.fit.all.rf, newdata = testing.clean)
 PMLWriteFiles = function(x){
 +     n = length(x)
