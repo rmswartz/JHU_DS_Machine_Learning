@@ -2,7 +2,7 @@
 by: Ryan M. Swartz
 
 #Executive Summary
-In a recent experiment carried out by researchers at Groupware@LES^1^, six subjects wore accelerometers on their the belt, forearm, arm, and a dumbell while performing a weight training exercise either with correct or incorrect form. I split this data into a training set and a test set with the object of building and testing a machine learning model to classify the activity as correct or incorrect based on only the readings of the accelerometers. With this data, the trained model demonstrated an out-of-sample accuracy of ##% using a random sub-sampling cross-validation approach to test, and correctly predicted proper execution on ## of 20 test cases provided as a final check on the model.
+In a recent experiment carried out by researchers at Groupware@LES^1^, six subjects wore accelerometers on their the belt, forearm, arm, and a dumbell while performing a weight training exercise either with correct or incorrect form. I split this data into a training set and a test set with the object of building and testing a machine learning model to classify the activity as correct or incorrect based on only the readings of the accelerometers. With this data, the trained model demonstrated an out-of-sample accuracy of `{r round(cm.fit.2$overall['Accuracy'], 3) * 100}`% using a random sub-sampling cross-validation approach to test, and correctly predicted  execution class on 20 of 20 test cases provided as a final check on the model.
 
 #Data Processing
 
@@ -10,11 +10,12 @@ I executed a several step process, detailed below, to segment the data and prepa
 
 _**Step 1**_: Load any R packages required for the analysis.
 
-```{r package load, warning = FALSE}
+```{r package load, cache = TRUE, warning = FALSE}
 library(vcd)
 library(caret)
 library(gbm)
 library(randomForest)
+library(e1071)
 ```
 
 _**Step 2**_: Download the source data and create appropriate R objects.
@@ -22,8 +23,10 @@ _**Step 2**_: Download the source data and create appropriate R objects.
 ```{r data download, cache = TRUE, warning = FALSE}
 train.URL <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-training.csv"
 test.URL <- "http://d396qusza40orc.cloudfront.net/predmachlearn/pml-testing.csv"
-training <- read.table(train.URL, header = TRUE, sep = ",", dec = ",", na.strings = c("NA", ""))
-testing <- read.table(test.URL, header = TRUE, sep = ",", dec = ",", na.strings = c("NA", ""))
+training <- read.table(train.URL, header = TRUE, sep = ",", dec = ",", 
+                       na.strings = c("NA", ""))
+testing <- read.table(test.URL, header = TRUE, sep = ",", dec = ",", 
+                      na.strings = c("NA", ""))
 ```
 
 _**Step 3**_: After inspection of the training data with the `str()` function, I cleaned the data (both training and test sets) by removing the predictors with 'NA' values among their observations and subsetting the data to the outcome and the measurements from the accelerometers. Also, I converted any measurements inadvertently stored as `factor` to `numeric`.
@@ -32,14 +35,14 @@ _**Step 3**_: After inspection of the training data with the `str()` function, I
 str(training)
 ```
 
-```{r cleaning, warning = FALSE}
+```{r cleaning, cache = TRUE, warning = FALSE}
 ## remove significantly (>25%) NA variables from training set
 ## (and use that to drive test set cleaning later)
 training.na.sum <- colSums(is.na(training))
 training.remove <- which(training.na.sum > (0.25 * nrow(training)))
 training.clean <- training[, -training.remove]
 ## subset both the training and test sets to variables from accelerometers and
-## necessary identities
+## necessary identities (i.e., excluding row reference 'X')
 var.names <- names(training.clean[c(60, 2, 8:59)])
 training.clean <- subset(training.clean, select = var.names)
 testing.clean <- subset(testing, select = names(testing) %in% var.names)
@@ -65,7 +68,7 @@ for (i in 2:53) {
 
 _**Step 4**_: I split the original training data into two sets based on a 75% random sub-sampling scheme to enable cross-validation of the model options and insight to select the best approach before the final test on the `classe` variable. `classe` indicates correct or incorrect execution of the exercise with codes A through E, where A indicates a correct execution, while the others classify a variety of improper executions. For full details, please see Reference 1. 
 
-```{r data splitting, warning = FALSE}
+```{r data splitting, cache = TRUE, warning = FALSE}
 set.seed(19428)
 in.train <- createDataPartition(y = training.clean$classe, p = 0.75, list = FALSE)
 training.clean.cv <- training.clean[in.train, ]
@@ -76,18 +79,20 @@ _**Step 5**_: In this portion of the analysis, I created two options for the set
 
 _Option 1_: Removing Near Zero Covariates (NZC) identifies those predictors with near zero covariance to limit the predictors to just those that are likely to be good.
 
-```{r nzc}
+```{r nzc, cache = TRUE, warning = FALSE}
 set.seed(19428)
 nzc.ni <- nearZeroVar(training.clean.cv, saveMetrics = TRUE)
-training.clean.cv.nzc <- training.clean.cv[, colnames(training.clean.cv) %in% rownames(nzc.ni)[nzc.ni$nzv == FALSE]]
-testing.clean.cv.nzc <- testing.clean.cv[, colnames(testing.clean.cv) %in% rownames(nzc.ni)[nzc.ni$nzv == FALSE]]
+training.clean.cv.nzc <- training.clean.cv[, colnames(training.clean.cv) %in% 
+                                             rownames(nzc.ni)[nzc.ni$nzv == FALSE]]
+testing.clean.cv.nzc <- testing.clean.cv[, colnames(testing.clean.cv) %in% 
+                                           rownames(nzc.ni)[nzc.ni$nzv == FALSE]]
 ```
 
 As it turns out, NZC does not remove any predictors from consideration as compared to the training set; therefore, all predictors in the training data are sufficiently variable in comparison to each other by this measure.
 
 _Option 2_: To consider another way to select predictors, Principal Components Analysis (PCA) is used to collapse the clean training data's predictors to weighted combinations. This set will be used to train a variety of models and compare the performance of those models against that of models trained with the clean training set, allowing me to determine which method of predictor selection is best for this problem.
 
-```{r pca}
+```{r pca, cache = TRUE, warning = FALSE}
 set.seed(19428)
 pre.proc.cv <- preProcess(training.clean.cv[, 3:54], method = "pca", thresh = 0.8)
 ## create training data of PCA predictors
@@ -117,53 +122,85 @@ With this mosaic plot, we can see that there is a fair amount of variability in 
 _**Model Selection**_
 With two possible sets of variables to consider (all those in the clean training set and those resulting from a PCA), I created four models (Bagging and Random Forest approach for each variable set) and evaluated their performance on this problem based on accuracy and kappa. Based upon this, I built a final model using the predictor selection method and modeling approach combination that yielded the best performance with the entire training set.
 
-```{r models, cache = TRUE}
+```{r model 1, cache = TRUE, warning = FALSE}
 set.seed(19428)
-## remove any objects no longer needed to free up memory
-rm(training)
-rm(testing)
-rm(nzc.ni)
-rm(testing.clean.cv.nzc)
-rm(training.clean.cv.nzc)
 ## Model 1: training data with all predictors, boosting approach
-mod.fit.all.b <- train(classe ~ ., method = "gbm", data = training.clean.cv, verbose = FALSE)
+mod.fit.all.b <- train(classe ~ ., method = "gbm", data = training.clean.cv, 
+                       verbose = FALSE)
+```
+
+```{r model 2, cache = TRUE, warning = FALSE}
+set.seed(19428)
 ## Model 2: training data with all predictors, random forest model approach
-mod.fit.all.rf <- train(classe ~ ., method = "rf", data = training.clean.cv, prox = TRUE)
+mod.fit.all.rf <- train(classe ~ ., method = "rf", data = training.clean.cv, 
+                        prox = TRUE)
+```
+
+```{r model 3, cache = TRUE, warning = FALSE}
+set.seed(19428)
 ## Model 3: PCA data, boosting approach
-mod.fit.pca.b <- train(classe ~ ., method = "gbm", data = training.clean.cv.pca, verbose = FALSE)
+mod.fit.pca.b <- train(classe ~ ., method = "gbm", data = training.clean.cv.pca, 
+                       verbose = FALSE)
+```
+
+```{r model 4, cache = TRUE, warning = FALSE}
+set.seed(19428)
 ## Model 4: PCA data, random forest approach
-mod.fit.pca.rf <- train(classe ~ ., method = "rf", data = training.clean.cv.pca, prox = TRUE)
+mod.fit.pca.rf <- train(classe ~ ., method = "rf", data = training.clean.cv.pca, 
+                        prox = TRUE)
 ```
 
 With the completion of four different models, the researcher concluded the cross validation portion of model building. Recall that the researcher created a training set and validation set of data from the original training corpus with a 75% split. With the validation set, the researcher determined estimates for the out-of-sample error for each model option and selected the approach with the lowest error to train the final model on the entirety of the training corpus.
 
-```{r confusion matrices, cache = TRUE}
+```{r confusion matrices, cache = TRUE, warning = FALSE}
 ## Model 1: predictions and confusion matrices
+pred.fit.1.is <- predict(mod.fit.all.b, newdata = training.clean.cv)
 pred.fit.1 <- predict(mod.fit.all.b, newdata = testing.clean.cv)
+cm.fit.1.is <- confusionMatrix(pred.fit.1.is, training.clean.cv$classe)
 cm.fit.1 <- confusionMatrix(pred.fit.1, testing.clean.cv$classe)
 ## Model 2: predictions and confusion matrices
+pred.fit.2.is <- predict(mod.fit.all.rf, newdata = training.clean.cv)
 pred.fit.2 <- predict(mod.fit.all.rf, newdata = testing.clean.cv)
+cm.fit.2.is <- confusionMatrix(pred.fit.2.is, training.clean.cv$classe)
 cm.fit.2 <- confusionMatrix(pred.fit.2, testing.clean.cv$classe)
 ## Model 3: predictions and confusion matrices
+pred.fit.3.is <- predict(mod.fit.pca.b, newdata = training.clean.cv.pca)
 pred.fit.3 <- predict(mod.fit.pca.b, newdata = testing.clean.cv.pca)
+cm.fit.3.is <- confusionMatrix(pred.fit.3.is, training.clean.cv.pca$classe)
 cm.fit.3 <- confusionMatrix(pred.fit.3, testing.clean.cv.pca$classe)
 ## Model 4: predictions and confusion matrices
+pred.fit.4.is <- predict(mod.fit.pca.rf, newdata = training.clean.cv.pca)
 pred.fit.4 <- predict(mod.fit.pca.rf, newdata = testing.clean.cv.pca)
+cm.fit.4.is <- confusionMatrix(pred.fit.4.is, training.clean.cv.pca$classe)
 cm.fit.4 <- confusionMatrix(pred.fit.4, testing.clean.cv.pca$classe)
 ```
 
 Having built the models and performed cross validation, the estimates for out-of-sample error and kappa are as follows for each:
 
-| Model No. | Predictor Selection | Model Type | 95% CI of Error | Kappa |
+| Model No. | Predictor Selection | Model Type | 95% CI of OoS Error | Kappa |
 |----------|----------|----------|----------|----------|
-| 1 | All | Bagging | (`{r round(cm.fit.1$overall['AccuracyLower'], 3}`, `{r round(cm.fit.1$overall['AccuracyUpper'], 3}`) | `{r round(cm.fit.1$overall['Kappa'], 3}` |
-| 2 | All | Random Forest | (`{r round(cm.fit.2$overall['AccuracyLower'], 3}`, `{r round(cm.fit.2$overall['AccuracyUpper'], 3}`) | `{r round(cm.fit.2$overall['Kappa'], 3}` |
-| 3 | PCA | Bagging | (`{r round(cm.fit.3$overall['AccuracyLower'], 3}`, `{r round(cm.fit.3$overall['AccuracyUpper'], 3}`) | `{r round(cm.fit.3$overall['Kappa'], 3}` |
-| 4 | PCA | Random Forest | (`{r round(cm.fit.4$overall['AccuracyLower'], 3}`, `{r round(cm.fit.4$overall['AccuracyUpper'], 3}`) | `{r round(cm.fit.4$overall['Kappa'], 3}` |
+| 1 | All | Bagging | (`{r round(cm.fit.1$overall['AccuracyLower'], 3)}`, `{r round(cm.fit.1$overall['AccuracyUpper'], 3)}`) | `{r round(cm.fit.1$overall['Kappa'], 3)}` |
+| 2 | All | Random Forest | (`{r round(cm.fit.2$overall['AccuracyLower'], 3)}`, `{r round(cm.fit.2$overall['AccuracyUpper'], 3)}`) | `{r round(cm.fit.2$overall['Kappa'], 3)}` |
+| 3 | PCA | Bagging | (`{r round(cm.fit.3$overall['AccuracyLower'], 3)}`, `{r round(cm.fit.3$overall['AccuracyUpper'], 3)}`) | `{r round(cm.fit.3$overall['Kappa'], 3)}` |
+| 4 | PCA | Random Forest | (`{r round(cm.fit.4$overall['AccuracyLower'], 3)}`, `{r round(cm.fit.4$overall['AccuracyUpper'], 3)}`) | `{r round(cm.fit.4$overall['Kappa'], 3)}` |
 
-With this cross validation, the most accurate approach is to use all variables in the clean training set to train a random forest model.
+With this cross validation, the most accurate approach is to use all variables in the clean training set to train a random forest model. We note the in-sample accuracy of this model approach to be `{r round(cm.fit.2.is$overall['Accuracy'], 3) * 100}`%, which is of course an over-estimate of the out-of-sample accuracy of `{r round(cm.fit.2$overall['Accuracy'], 3) * 100}`%. As a final test, I run the model against the provided testing set to evaluate the model on 20 test cases and write those results to text files in the working directory.
 
 
+```{r final test, cache = TRUE, warnings = FALSE}
+final.test.results <- predict(mod.fit.all.rf, newdata = testing.clean)
+PMLWriteFiles = function(x){
++     n = length(x)
++     for(i in 1:n){
++         filename = paste0("problem_id_",i,".txt")
++         write.table(x[i],file=filename,quote=FALSE,row.names=FALSE,col.names=FALSE)
++     }
++ }
+PMLWriteFiles(final.test.results)
+```
+
+#Results
+In this analysis, I determined the best approach to building a classification model to evaluate exercise performance using accelerometer data as using all relevant predictors among this data to train a random forest model. Cross validation showed this model to have the best out-of-sample accuracy at `{r round(cm.fit.2$overall['Accuracy'], 3) * 100}`%. The possibilities for such a model are many, including use in devices to measure the movements of any physcial activity that requires precision to determine how well that goal is achieved (e.g., athletes in training exercises or competition). To further improve upon the model, future study could try different machine learning approaches (such as scalable vector machines) or retaining a greater portion of the readings from the acclerometers. In this analysis, much of the original training data was not included in the model because it was missing; future efforts would benefit from either correcting the accelerometers to report this data, or imputing a portion of the data when there is enough variable data to do so.
 
 #References
 1. Velloso, E.; Bulling, A.; Gellersen, H.; Ugulino, W.; Fuks, H. [Qualitative Activity Recognition of Weight Lifting Exercises](http://groupware.les.inf.puc-rio.br/work.jsf?p1=11201). Proceedings of 4th International Conference in Cooperation with SIGCHI (Augmented Human '13) . Stuttgart, Germany: ACM SIGCHI, 2013.
