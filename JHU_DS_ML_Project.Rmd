@@ -90,7 +90,7 @@ testing.clean.cv.nzc <- testing.clean.cv[, colnames(testing.clean.cv) %in%
 
 As it turns out, NZC does not remove any predictors from consideration as compared to the training set; therefore, all predictors in the training data are sufficiently variable in comparison to each other by this measure.
 
-_Option 2_: To consider another way to select predictors, Principal Components Analysis (PCA) is used to collapse the clean training data's predictors to weighted combinations. This set will be used to train a variety of models and compare the performance of those models against that of models trained with the clean training set, allowing me to determine which method of predictor selection is best for this problem.
+_Option 2_: To consider another way to select predictors, Principal Components Analysis (PCA) is used to collapse the clean training data's predictors to weighted combinations. This PCA set will be used to train two models and compare the performance of those models against that of models trained with the clean training set, allowing me to determine which method of predictor selection is best for this problem.
 
 ```{r pca, cache = TRUE, warning = FALSE, message = FALSE}
 set.seed(19428)
